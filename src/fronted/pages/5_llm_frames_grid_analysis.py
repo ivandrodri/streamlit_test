@@ -2,9 +2,9 @@ import logging
 import time
 import streamlit as st
 import cv2
-from backend.utils import format_time, create_images_pool_from_video, create_mosaic_from_video_frames, \
+from src.backend.utils import format_time, create_images_pool_from_video, create_mosaic_from_video_frames, \
     create_mosaic_from_video_frames_multi_thread, get_llm_inference
-from fronted.utils import create_title_page, show_video, create_llm_models_menu, \
+from src.fronted.utils import create_title_page, show_video, create_llm_models_menu, \
     create_minute_seconds_button, convert_minutes_seconds_to_frames, create_mosaic_plot_dimension_icon, \
     create_batch_size_and_frame_to_skip_frequency_buttons, create_start_analysis_button, video_connector, \
     visualize_current_frame_inference_frame_and_mosaic_plots_for_inference

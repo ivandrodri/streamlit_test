@@ -11,9 +11,11 @@ import streamlit as st
 from matplotlib import pyplot as plt
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-from backend.factories.llm_factory import LlmModelFactory, LlmOutput
-from backend.utils import process_frame, format_time
+
 import seaborn as sns
+
+from src.backend.factories.llm_factory import LlmModelFactory, LlmOutput
+from src.backend.utils import process_frame, format_time
 
 logging.basicConfig(level=logging.INFO)
 
