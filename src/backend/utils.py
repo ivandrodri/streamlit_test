@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 from joblib import Parallel, delayed
 
-from backend.factories.llm_factory import LlmOutput, LlmModelFactory, LLMInput
-from backend.factories.llm_messages_factory import LlmMessageFactory
+from src.backend.factories.llm_factory import LlmOutput, LlmModelFactory, LLMInput
+from src.backend.factories.llm_messages_factory import LlmMessageFactory
 
 load_dotenv(dotenv_path="../../.env")
 

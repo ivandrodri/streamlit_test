@@ -8,8 +8,8 @@ from openai import OpenAI
 import fireworks.client
 import json
 from pydantic import BaseModel, Field
-from backend.factories.api_keys_factory import FactoryKey
-from backend.factories.logging_config import log_llm_usage
+from src.backend.factories.api_keys_factory import FactoryKey
+from src.backend.factories.logging_config import log_llm_usage
 
 MAX_TOKENS = 100
 
