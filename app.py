@@ -2,6 +2,12 @@ import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()  # Add this line to load the .env file
 
+
+def format_time(seconds):
+    """Convert seconds to MM:SS format"""
+    return f"{int(seconds/60):02d}:{int(seconds%60):02d}"
+
+
 st.set_page_config(
     page_title="Video Frame Analyzer",
     page_icon="🎥",
@@ -38,6 +44,13 @@ if uploaded_file != st.session_state.video_file:
             'fps': video.get(cv2.CAP_PROP_FPS),
             'duration': int(video.get(cv2.CAP_PROP_FRAME_COUNT)) / video.get(cv2.CAP_PROP_FPS)
         }
+
+        # Video info
+        metadata = st.session_state.video_metadata
+        st.write(f"Video duration: {format_time(metadata['duration'])} ({metadata['duration']:.1f} seconds)")
+        st.write(f"Total frames: {metadata['total_frames']}")
+        st.write(f"FPS: {metadata['fps']}")
+        st.video(st.session_state.video_path)
         video.release()
     else:
         st.session_state.video_path = None

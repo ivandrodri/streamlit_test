@@ -1,23 +1,29 @@
 import random
 from abc import abstractmethod, ABCMeta
 from enum import StrEnum, EnumMeta
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Callable
 import time
+
 import numpy as np
 from openai import OpenAI
 import fireworks.client
 import json
 from pydantic import BaseModel, Field
 from src.backend.factories.api_keys_factory import FactoryKey
-from src.backend.factories.logging_config import log_llm_usage
+from src.backend.factories.llm_messages_factory import LlmMessageFactory
+from src.backend.logging_config import log_llm_usage
 
 MAX_TOKENS = 100
 
 
+class ModelProviders(StrEnum):
+    open_ai = "OPEN_AI"
+    fireworks = "FIREWORKS"
+    fake_provider = "FAKE_PROVIDER"
+
+
 class LLMInput(BaseModel):
     model_name: str
-    prompt: str | None = None# ToDo: I don't need this here anymore in current version --> used to create message
-    frames: np.ndarray | List[np.ndarray] | None = None  # ToDo: I don't need this here anymore in current version --> used to create message
     message: List[Dict] | str = Field(default_factory=list)
     max_tokens: int = MAX_TOKENS  # Replace with actual MAX_TOKENS if defined elsewhere
     response_format: Dict = {"type": "json_object"}
@@ -125,7 +131,7 @@ class OpenAIModelFactory(BaseModelFactory):
 
     @classmethod
     def get_provider_name(cls) -> str:
-        return "OPENAI"
+        return ModelProviders.open_ai
 
     def admit_batch_mode(self) -> bool:
         match self:
@@ -141,10 +147,11 @@ class FireworkModelFactory(BaseModelFactory):
     Llama_3_11B_Vision = "accounts/fireworks/models/llama-v3p2-11b-vision-instruct"
     Llama_3_90B_Vision = "accounts/fireworks/models/llama-v3p2-90b-vision-instruct"
     Phi_3_Vision = "accounts/fireworks/models/phi-3-vision-128k-instruct"  # 4B params
+    firellava_13b = "accounts/ivandiegorodriguez-a46102/deployedModels/firellava-13b-9147df42"
 
     def get_response(self, model_input_data: LLMInput) -> LlmOutput:
         match self:
-            case self.Llama_3_11B_Vision | self.Llama_3_90B_Vision | self.Phi_3_Vision:
+            case self.Llama_3_11B_Vision | self.Llama_3_90B_Vision | self.Phi_3_Vision | self.firellava_13b:
                 fireworks.client.api_key = FactoryKey.fireworks.get_key()
 
                 completions = fireworks.client.ChatCompletion
@@ -189,6 +196,8 @@ class FireworkModelFactory(BaseModelFactory):
                 return {"token_price": 0.20, "context": 128000}
             case self.Phi_3_Vision:
                 return {"token_price": 0.20, "context": 31000}
+            case self.firellava_13b:
+                return {"token_price": 0.20, "context": 4000}
 
     def get_total_cost(self, num_input_tokens: int, num_output_tokens: int) -> float:
         cost_tokens = (num_input_tokens * self.get_euro_cost_per_million_tokens()["token_price"] +
@@ -197,11 +206,11 @@ class FireworkModelFactory(BaseModelFactory):
 
     @classmethod
     def get_provider_name(cls) -> str:
-        return "FIREWORKS"
+        return ModelProviders.fireworks
 
     def admit_batch_mode(self) -> bool:
         match self:
-            case self.Llama_3_11B_Vision | self.Llama_3_90B_Vision | self.Phi_3_Vision:
+            case self.Llama_3_11B_Vision | self.Llama_3_90B_Vision | self.Phi_3_Vision | self.firellava_13b:
                 return False
             case _:
                 raise ValueError(f"The model you try to access {self} is not yet registered.")
@@ -253,7 +262,7 @@ class FakeModelFactory(BaseModelFactory):
 
     @classmethod
     def get_provider_name(cls) -> str:
-        return "FAKE_PROVIDER"
+        return ModelProviders.fake_provider
 
     def admit_batch_mode(self) -> bool:
         return True
@@ -266,6 +275,7 @@ class LlmModelFactory(StrEnum):
     Llama_3_11B_Vision = "Llama_3_11B_Vision"
     Llama_3_90B_Vision = "Llama_3_90B_Vision"
     Phi_3_Vision = "Phi_3_Vision"
+    firellava_13b = "firellava_13b"
 
     def get_llm_model(self):
         match self:
@@ -279,10 +289,52 @@ class LlmModelFactory(StrEnum):
                 return FireworkModelFactory.Phi_3_Vision
             case self.Llama_3_90B_Vision:
                 return FireworkModelFactory.Llama_3_90B_Vision
+            case self.firellava_13b:
+                return FireworkModelFactory.firellava_13b
             case self.fake_model:
                 return FakeModelFactory.fake_model
             case _:
                 raise ValueError(f"The model {self} is not yet registered")
+
+    def get_response(
+            self,
+            prompt: str,
+            frames: np.ndarray | List[np.ndarray] | None = None,
+            batch_mode: bool = False,
+            max_num_tokens: int = 200,
+            min_response_time_fake_model: float | None = None,
+            max_response_time_fake_model: float | None = None
+    ) -> List[LlmOutput]:
+        match self:
+            case self.gpt_4o | self.gpt_4o_mini | self.fake_model:
+                message = LlmMessageFactory.multi_frame_message_openai.get_message if batch_mode else (
+                    LlmMessageFactory.single_frame_message_openai.get_message)
+            case self.Llama_3_11B_Vision | self.Llama_3_90B_Vision | self.Phi_3_Vision | self.firellava_13b:
+                message = LlmMessageFactory.single_frame_message_fireworks.get_message
+            case _:
+                raise ValueError(f"No message generator from LlmMessageFactory assign to model {self.value}")
+
+        if batch_mode and not self.get_llm_model().admit_batch_mode():
+            response = get_llm_response_for_fake_batch(
+                model_name=self.name,
+                frames=frames,
+                prompt=prompt,
+                message_generator=message,
+                max_num_tokens=max_num_tokens,
+                min_response_time_fake_model=min_response_time_fake_model,
+                max_response_time_fake_model=max_response_time_fake_model
+            )
+        else:
+            response = get_llm_response_for_batch(
+                model_name=self.name,
+                prompt=prompt,
+                frames=frames,
+                message_generator=message,
+                max_num_tokens=max_num_tokens,
+                min_response_time_fake_model=min_response_time_fake_model,
+                max_response_time_fake_model=max_response_time_fake_model
+            )
+        return [response]
 
     @classmethod
     def get_model_names(cls) -> List[str]:
@@ -316,3 +368,117 @@ response = completions.create(
 
 bla = 4
 '''
+
+
+def get_llm_response_for_batch(
+        model_name: str,
+        prompt: str,
+        message_generator: Callable,
+        frames: List[np.ndarray] | np.ndarray | None = None,
+        max_num_tokens: int = 200,
+        min_response_time_fake_model: float | None = None,
+        max_response_time_fake_model: float | None = None
+):
+    if not (isinstance(frames, np.ndarray) or isinstance(frames, List)):
+        raise ValueError(f"In batch mode frames must be of type np.ndarray or List[np.ndarray]")
+
+    message = message_generator(prompt=prompt, frames=frames)
+    model_input = LLMInput(
+        model_name=model_name,
+        message=message,
+        max_tokens=max_num_tokens,
+        fake_inference_time_range=(min_response_time_fake_model, max_response_time_fake_model)
+    )
+
+    llm_model = LlmModelFactory[model_name].get_llm_model()
+
+    llm_response = llm_model.get_response(model_input)
+    return llm_response
+
+
+def _aggregate_llm_outputs_in_fake_batch_mode(llm_outputs: List[LlmOutput]) -> LlmOutput:
+
+    def index_hazards_detected(hazards: List):
+        for i, value in enumerate(hazards):
+            if value is True:
+                return i
+        return None
+
+    hazards_detected = []
+    hazards_type = []
+    reasoning = []
+    cost = 0.0
+    inference_time = 0.0
+    for id_image, llm_output in enumerate(llm_outputs):
+        hazards_detected.append(llm_output.response.get("hazard_detected", None))
+        hazards_type.append(llm_output.response.get("hazard_type", None))
+        reasoning.append(f"Image_{id_image}: {llm_output.response.get('reasoning')} - "
+                         f"hazard detected: {str(hazards_detected[-1])} - "
+                         f"hazard type: {str(hazards_type[-1])}")
+        cost += llm_output.cost
+        inference_time += llm_output.inference_time
+
+    reasoning = "<br> ".join(reasoning)
+    reasoning = "<br> " + reasoning
+    index_hazard = index_hazards_detected(hazards_detected)
+
+    hazard_detected = False if index_hazard is None else True
+    hazard_type = "none" if index_hazard is None else hazards_type[index_hazard]
+    response = {"hazard_detected": hazard_detected, "hazard_type": hazard_type, "reasoning": reasoning}
+
+    return LlmOutput(
+        response=response,
+        inference_time=inference_time,
+        cost=cost
+    )
+
+
+def get_llm_response_for_fake_batch(
+        model_name: str,
+        prompt: str,
+        message_generator: Callable,
+        frames: List[np.ndarray] | None = None,
+        max_num_tokens: int = 200,
+        min_response_time_fake_model: float | None = None,
+        max_response_time_fake_model: float | None = None
+):
+    llm_model = LlmModelFactory[model_name].get_llm_model()
+    responses = []
+    llm_with_context_outputs = []
+    llm_cost = 0.0
+    llm_latency = 0.0
+    for idx, frame in enumerate(frames):
+
+        if idx == 0:
+            prompt_with_context = f"Frame {idx + 1}:\n{prompt}"
+        else:
+            prompt_with_context = f"""
+                       Previous analysis: {responses[-1]}
+
+                       Now analyze the next frame (Frame {idx + 1}):
+                       {prompt}
+                       """
+
+        message = message_generator(
+            frames=frame,
+            prompt=prompt_with_context,
+        )
+
+        model_input = LLMInput(
+            model_name=model_name,
+            message=message,
+            max_tokens=max_num_tokens,
+            fake_inference_time_range=(min_response_time_fake_model, max_response_time_fake_model)
+        )
+
+        llm_response = llm_model.get_response(model_input)
+        responses.append(llm_response.response)
+
+        llm_cost += llm_response.cost
+        llm_latency += llm_response.inference_time
+        llm_with_context_outputs.append(llm_response)
+
+    llm_response = _aggregate_llm_outputs_in_fake_batch_mode(llm_with_context_outputs)
+    llm_response.cost = llm_cost
+    llm_response.inference_time = llm_latency
+    return llm_response

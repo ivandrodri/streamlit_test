@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "guardian_angel"
+version = "0.1.0"
+description = "A Streamlit app that analyzes video frames using GPT"
+authors = ["Your Name <your.email@example.com>"]
+package-mode = false
+
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+streamlit = "^1.32.0"
+python-dotenv = "^1.0.1"
+pillow = "^10.2.0"
+openai = "1.59.6"
+fireworks-ai = "^0.13.0"
+matplotlib = "^3.10.0"
+opencv-python-headless = "^4.10.0.84"
+pyqt5 = "^5.15.11"
+joblib = "^1.4.2"
+tiktoken = "^0.8.0"
+seaborn = "^0.13.2"
+scikit-learn = "^1.6.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
